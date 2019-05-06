@@ -5,7 +5,7 @@ from collections import deque
 pygame.init()
 clock = pygame.time.Clock()
 
-RAYS = 500.0
+RAYS = 500
 FOV = 90.0
 WALL_HEIGHT = 7500.0
 LINE_OF_SIGHT_RADIUS = 450.0
@@ -28,7 +28,7 @@ def line_line_intersection(a,b,c,d):
  
 class Vector:
     
-    __slots__ = ('start_pos', 'end_pos', 'x_component', 'y_component', 'leng', 'rot_x_comp', 'rot_y_comp')
+    __slots__ = ('start_pos', 'end_pos', 'x_component', 'y_component', 'leng', 'rot_x_comp', 'rot_y_comp', 'unit_x', 'unit_y')
    
     def __init__(self,start_pos, end_pos):
         self.start_pos = start_pos
@@ -121,6 +121,8 @@ class Ray:
         self.end_pos = pos
         multipler = None
 
+        self.color = None
+
         for idx, wall in enumerate(Map.hit_walls):
             self.sign1 = Map.wall_start_pos_crosses[idx] #precalculated when we tested walls for checking.
             if self.lines_intersect(wall):
@@ -132,8 +134,9 @@ class Ray:
         if self.last_found: #rotate last found wall to first index so we start testing next ray from it
             Map.wall_start_pos_crosses.rotate(-self.last_found)
             Map.hit_walls.rotate(-self.last_found)
-            
-        return self.color, self.end_pos, multipler
+        
+        if self.color != None:
+            return self.color, self.end_pos, multipler
 
     def lines_intersect(self,wall):
         #calculate area of triangles, crossproduct gives area of square, but we are only
@@ -172,11 +175,11 @@ class Game:
         self.keydown = False
         self.collision = False
         self.ray = Ray(self.line_of_sight)
-        self.fov_rays = tuple(xrange(int(RAYS)))
+        self.fov_rays = tuple(range(int(RAYS)))
         self.angle_ray_ratio = math.radians(FOV / RAYS)
-        self.pre_calc_cosines = tuple([math.cos(math.radians(x * FOV/RAYS)) for x in range(-int(RAYS)/2,int(RAYS)/2)])
-        self.precalc_wall_constants =  map(lambda x: WALL_HEIGHT / x, self.pre_calc_cosines)
-        self.pre_calc_fov_rays_angle = map(self.angle_ray_ratio.__mul__, range(-250,250))
+        self.pre_calc_cosines = tuple([math.cos(math.radians(x * FOV / RAYS)) for x in range(-int(RAYS / 2.0), int(RAYS / 2.0))])
+        self.precalc_wall_constants =  list(map(lambda x: WALL_HEIGHT / x, self.pre_calc_cosines))
+        self.pre_calc_fov_rays_angle = list(map(self.angle_ray_ratio.__mul__, range(-250,250)))
         pygame.mouse.set_visible(False)
        
     def initialize_constants(self):
@@ -191,8 +194,8 @@ class Game:
         Map().find_collided_walls(self.pos, (self.fov_leftmost.rot_x_comp, self.fov_leftmost.rot_y_comp), (self.fov_rightmost.rot_x_comp, self.fov_rightmost.rot_y_comp))
         
         #use map to calculate endpoints of rays
-        self.end_points = map(self.angle.__add__, self.pre_calc_fov_rays_angle)
-        self.end_points = map(self.end_points_for_angles, self.end_points)
+        self.end_points = list(map(self.angle.__add__, self.pre_calc_fov_rays_angle))
+        self.end_points = list(map(self.end_points_for_angles, self.end_points))
         
     def event_handling(self):
             for event in pygame.event.get():
@@ -232,7 +235,7 @@ class Game:
         return (math.cos(angle)*-LINE_OF_SIGHT_RADIUS + self.pos[0], math.sin(angle)*-LINE_OF_SIGHT_RADIUS + self.pos[1])
     
     def correct_color(self,list_of_found_hits):
-        if list_of_found_hits[2]:
+        if list_of_found_hits and list_of_found_hits[2]:
             #could use list comprehencion but it's so slow for high demand calculating
             #for each color component, substract multipler, for shading
             return max(list_of_found_hits[0][0]-list_of_found_hits[2],0),max(list_of_found_hits[0][1]-list_of_found_hits[2],0),max(list_of_found_hits[0][2]-list_of_found_hits[2],0)
@@ -243,17 +246,18 @@ class Game:
         pygame.draw.rect(self.screen, (30,30,40) ,(0, 0, self.res_x, self.res_y))
         pygame.draw.rect(self.screen, (80,80,80) ,(0, self.res_y, self.res_x, self.res_x))
         
-        hits_found = map(self.ray.cast_ray, self.end_points) #calculate hits of each ray.
-        colors = map(self.correct_color,hits_found) #correct shading of walls
+        hits_found = list(map(self.ray.cast_ray, self.end_points)) #calculate hits of each ray.
+        colors = list(map(self.correct_color,hits_found)) #correct shading of walls
         
         self.collision = False
         
         #draw walls as seen from "camera"
         for i in self.fov_rays:
-            if hits_found[i][2]:
-                pygame.draw.line(self.screen, colors[i], (i,self.res_y + self.precalc_wall_constants[i] / hits_found[i][2]), (i, self.res_y - self.precalc_wall_constants[i] / hits_found[i][2]))
-                if hits_found[i][2] < 5:
-                    self.collision = True
+            if hits_found[i] != None:
+                if hits_found[i][2]:
+                    pygame.draw.line(self.screen, colors[i], (i,self.res_y + self.precalc_wall_constants[i] / hits_found[i][2]), (i, self.res_y - self.precalc_wall_constants[i] / hits_found[i][2]))
+                    if hits_found[i][2] < 5:
+                        self.collision = True
                     
         #draw plain walls
         if self.debug:
