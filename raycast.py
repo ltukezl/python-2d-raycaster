@@ -27,16 +27,18 @@ def line_line_intersection(a,b,c,d):
  
 class Vector:
     
-    __slots__ = ('start_pos', 'end_pos', 'x_component', 'y_component', 'leng', 'rot_x_comp', 'rot_y_comp', 'unit_x', 'unit_y')
+    __slots__ = ('start_pos', 'end_pos', 'x_component', 'y_component', 'length', 'rotated_x_component', 'rotated_y_component', 'unit_x', 'unit_y')
    
     def __init__(self,start_pos, end_pos):
         self.start_pos = start_pos
         self.end_pos = end_pos
+        self.length = LINE_OF_SIGHT_RADIUS #default to avoid unneeded calculation
+
         self.x_component = end_pos[0] - start_pos[0]
         self.y_component = end_pos[1] - start_pos[1]
-        self.leng = LINE_OF_SIGHT_RADIUS #default to avoid unneeded calculation
-        self.rot_x_comp = self.x_component
-        self.rot_y_comp = self.y_component
+        
+        self.rotated_x_component = self.x_component
+        self.rotated_y_component = self.y_component
    
     def vect_direction(self, start_pos, end_pos):
         """calculate vector components"""
@@ -45,28 +47,31 @@ class Vector:
                 
     def vect_length(self):
         """calculate vector length"""
-        self.leng =  math.hypot(self.x_component, self.y_component)
+        self.length =  math.hypot(self.x_component, self.y_component)
        
     def vect_rotate(self,angle):
         """rotate vector by angle"""
-        self.rot_x_comp = math.cos(angle)*self.x_component - math.sin(angle) * self.y_component + self.start_pos[0]
-        self.rot_y_comp = math.sin(angle)*self.x_component + math.cos(angle) * self.y_component + self.start_pos[1]
+        self.rotated_x_component = math.cos(angle)*self.x_component - math.sin(angle) * self.y_component + self.start_pos[0]
+        self.rotated_y_component = math.sin(angle)*self.x_component + math.cos(angle) * self.y_component + self.start_pos[1]
             
     def los_vect_rotate(self,angle):
         """rotate vector by angle"""
         #Stripped from component thus making calculations cheaper since y_component equals 0
-        self.rot_x_comp = math.cos(angle)*self.x_component + self.start_pos[0]
-        self.rot_y_comp = math.sin(angle)*self.x_component + self.start_pos[1]
+        self.rotated_x_component = math.cos(angle)*self.x_component + self.start_pos[0]
+        self.rotated_y_component = math.sin(angle)*self.x_component + self.start_pos[1]
     
     def cross_product(self, end):
         """calculate cross product of vector"""
         self.tmp_b = self.vect_direction(self.start_pos, end)
-        return self.rot_x_comp * self.tmp_b[1] - self.rot_y_comp * self.tmp_b[0]
+        return self.rotated_x_component * self.tmp_b[1] - self.rotated_y_component * self.tmp_b[0]
    
     def unit_vect(self):
         """calculate unit vector"""
-        self.unit_x = (self.rot_x_comp - self.start_pos[0])/self.leng
-        self.unit_y = (self.rot_y_comp - self.start_pos[1])/self.leng
+        self.unit_x = (self.rotated_x_component - self.start_pos[0])/self.length
+        self.unit_y = (self.rotated_y_component - self.start_pos[1])/self.length
+
+    def get_vector(self):
+        return (self.rotated_x_component, self.rotated_y_component)
  
 class Map:
                     #color, start_pos, end_pos
@@ -104,10 +109,10 @@ class Map:
         Map.hit_walls.clear()
         Map.wall_start_pos_crosses.clear()
         
-        for i in Map.all_objects:                  
-            if self.line_triangle_intersection(a,b,c,i[1],i[2]):
-                Map.hit_walls.append(i)
-                Map.wall_start_pos_crosses.append(cross_product(i[1], i[2], a)) #pre calculate crossproduct for wall testing.
+        for wall in Map.all_objects:                  
+            if self.line_triangle_intersection(a, b, c, wall[1],  wall[2]):
+                Map.hit_walls.append(wall)
+                Map.wall_start_pos_crosses.append(cross_product(wall[1], wall[2], a)) #pre calculate crossproduct for wall testing.
 
 class Ray:
     
@@ -162,40 +167,41 @@ class Ray:
 class Game:
      
     def __init__(self):
-        self.map = Map()
-        self.screen = pygame.display.set_mode((500,500))
-        self.res_x, self.res_y = self.screen.get_size()
-        self.res_y *= 0.6 #wall middle point
         self.running = True
-        self.angle = 0.0
-        self.pos = [250,250]
-        self.end_pos = [self.pos[0]-LINE_OF_SIGHT_RADIUS, self.pos[1]]
-        self.line_of_sight = Vector(self.pos, self.end_pos)
         self.debug = False
         self.keydown = False
         self.collision = False
+
+        self.angle = 0.0
+        self.pos = [250,250]
+        self.end_pos = [self.pos[0]-LINE_OF_SIGHT_RADIUS, self.pos[1]]
+        self.map = Map()
+        self.screen = pygame.display.set_mode((500,500))
+        self.res_x, self.res_y = self.screen.get_size()
+        self.line_of_sight = Vector(self.pos, self.end_pos)
         self.ray = Ray(self.line_of_sight)
-        self.fov_rays = tuple(range(int(RAYS)))
-        self.angle_list = [math.tan(x / LINE_OF_SIGHT_RADIUS) for x in range(-int(RAYS / 2.0), int(RAYS / 2.0))] #one ray to each pixel in plane. 
+        self.ray_number = tuple(range(RAYS))
+        
+        self.res_y *= 0.6 #wall middle point
+        self.angle_list = [math.tan(x / LINE_OF_SIGHT_RADIUS) for x in range(-RAYS // 2, RAYS // 2)] #one ray angle to each pixel in plane at distance of LINE_OF_SIGHT_RADIUS. 
         self.pre_calc_cosines = tuple([math.cos(x) for x in self.angle_list])
-        self.precalc_wall_constants =  list(map(lambda x: WALL_HEIGHT / x, self.pre_calc_cosines))
-        #self.pre_calc_fov_rays_angle = list(map(self.angle_ray_ratio.__mul__, range(-250,250)))
-        self.pre_calc_fov_rays_angle = self.angle_list
+        self.precalc_wall_constants =  tuple(map(lambda x: WALL_HEIGHT / x, self.pre_calc_cosines))
+
         pygame.mouse.set_visible(False)
        
     def initialize_constants(self):
         """init fov triangle, within this we try to find walls we have to test"""
-        self.fov_leftmost = Vector(self.pos, (-200,700)) #calculated end points
-        self.fov_rightmost = Vector(self.pos, (-200,-200))
+        self.fov_leftmost = Vector(self.pos, self.end_points_for_angles(self.angle_list[0])) #calculated end points
+        self.fov_rightmost = Vector(self.pos, self.end_points_for_angles(self.angle_list[-1]))
         
     def logic(self):
         #rotate fov_triangle and test walls
         self.fov_leftmost.vect_rotate(self.angle)
         self.fov_rightmost.vect_rotate(self.angle)
-        self.map.find_collided_walls(self.pos, (self.fov_leftmost.rot_x_comp, self.fov_leftmost.rot_y_comp), (self.fov_rightmost.rot_x_comp, self.fov_rightmost.rot_y_comp))
+        self.map.find_collided_walls(self.pos, self.fov_leftmost.get_vector(), self.fov_rightmost.get_vector())
         
         #use map to calculate endpoints of rays
-        self.end_points = list(map(self.angle.__add__, self.pre_calc_fov_rays_angle))
+        self.end_points = list(map(self.angle.__add__, self.angle_list))
         self.end_points = list(map(self.end_points_for_angles, self.end_points))
         
     def event_handling(self):
@@ -253,7 +259,7 @@ class Game:
         self.collision = False
         
         #draw walls as seen from "camera"
-        for i in self.fov_rays:
+        for i in self.ray_number:
             if hits_found[i] != None:
                 if hits_found[i][2]:
                     pygame.draw.line(self.screen, colors[i], (i,self.res_y + self.precalc_wall_constants[i] / hits_found[i][2]), (i, self.res_y - self.precalc_wall_constants[i] / hits_found[i][2]))
@@ -262,21 +268,15 @@ class Game:
                     
         #draw plain walls
         if self.debug:
-            pygame.draw.line(self.screen, (200,200,200), self.pos, (self.fov_leftmost.rot_x_comp, self.fov_leftmost.rot_y_comp))
-            pygame.draw.line(self.screen, (200,200,200), self.pos, (self.fov_rightmost.rot_x_comp, self.fov_rightmost.rot_y_comp))
+            pygame.draw.line(self.screen, (200,200,200), self.pos, self.fov_leftmost.get_vector())
+            pygame.draw.line(self.screen, (200,200,200), self.pos, self.fov_rightmost.get_vector())
             for i in Map.hit_walls:
                 pygame.draw.line(self.screen, *i)
-            for i in self.end_points:
-                pygame.draw.line(self.screen, (255,255,255), self.pos, i)
                 
-
         pygame.display.flip()
-    
-    #@profile    
+       
     def run(self):
         self.initialize_constants()
-        #for i in range(3000):
-        #    self.angle += 1.0 / 500
         while self.running:
             self.event_handling()
             self.logic()
