@@ -6,7 +6,6 @@ pygame.init()
 clock = pygame.time.Clock()
 
 RAYS = 500
-FOV = 90.0
 WALL_HEIGHT = 7500.0
 LINE_OF_SIGHT_RADIUS = 450.0
 
@@ -149,7 +148,7 @@ class Ray:
             # sign1 + sign2 = sign3 + sing4: thus
             sign4 = sign3 + sign2 - self.sign1
             if sign4 * sign3 <= 0:
-                self.ratio = self.sign1 / (self.sign1- sign2) #gives ratio of how far the hit was. 0 < ratio < 1
+                self.ratio = self.sign1 / (self.sign1 - sign2) #gives ratio of how far the hit was. 0 < ratio < 1
                 return True
             
     def distance_to_wall(self):
@@ -163,6 +162,7 @@ class Ray:
 class Game:
      
     def __init__(self):
+        self.map = Map()
         self.screen = pygame.display.set_mode((500,500))
         self.res_x, self.res_y = self.screen.get_size()
         self.res_y *= 0.6 #wall middle point
@@ -176,10 +176,11 @@ class Game:
         self.collision = False
         self.ray = Ray(self.line_of_sight)
         self.fov_rays = tuple(range(int(RAYS)))
-        self.angle_ray_ratio = math.radians(FOV / RAYS)
-        self.pre_calc_cosines = tuple([math.cos(math.radians(x * FOV / RAYS)) for x in range(-int(RAYS / 2.0), int(RAYS / 2.0))])
+        self.angle_list = [math.tan(x / LINE_OF_SIGHT_RADIUS) for x in range(-int(RAYS / 2.0), int(RAYS / 2.0))] #one ray to each pixel in plane. 
+        self.pre_calc_cosines = tuple([math.cos(x) for x in self.angle_list])
         self.precalc_wall_constants =  list(map(lambda x: WALL_HEIGHT / x, self.pre_calc_cosines))
-        self.pre_calc_fov_rays_angle = list(map(self.angle_ray_ratio.__mul__, range(-250,250)))
+        #self.pre_calc_fov_rays_angle = list(map(self.angle_ray_ratio.__mul__, range(-250,250)))
+        self.pre_calc_fov_rays_angle = self.angle_list
         pygame.mouse.set_visible(False)
        
     def initialize_constants(self):
@@ -191,7 +192,7 @@ class Game:
         #rotate fov_triangle and test walls
         self.fov_leftmost.vect_rotate(self.angle)
         self.fov_rightmost.vect_rotate(self.angle)
-        Map().find_collided_walls(self.pos, (self.fov_leftmost.rot_x_comp, self.fov_leftmost.rot_y_comp), (self.fov_rightmost.rot_x_comp, self.fov_rightmost.rot_y_comp))
+        self.map.find_collided_walls(self.pos, (self.fov_leftmost.rot_x_comp, self.fov_leftmost.rot_y_comp), (self.fov_rightmost.rot_x_comp, self.fov_rightmost.rot_y_comp))
         
         #use map to calculate endpoints of rays
         self.end_points = list(map(self.angle.__add__, self.pre_calc_fov_rays_angle))
@@ -227,8 +228,8 @@ class Game:
             if self.keydown and not self.collision:
                 self.line_of_sight.los_vect_rotate(self.angle)
                 self.line_of_sight.unit_vect()
-                self.pos[0] += self.line_of_sight.unit_x * 5
-                self.pos[1] += self.line_of_sight.unit_y * 5
+                self.pos[0] += self.line_of_sight.unit_x * 5 * clock.get_time() / 20
+                self.pos[1] += self.line_of_sight.unit_y * 5 * clock.get_time() / 20
     
     def end_points_for_angles(self, angle):
         #line of sight doesn't have y component, so we can have stripperd down version of rotation matrix
@@ -238,7 +239,7 @@ class Game:
         if list_of_found_hits and list_of_found_hits[2]:
             #could use list comprehencion but it's so slow for high demand calculating
             #for each color component, substract multipler, for shading
-            return max(list_of_found_hits[0][0]-list_of_found_hits[2],0),max(list_of_found_hits[0][1]-list_of_found_hits[2],0),max(list_of_found_hits[0][2]-list_of_found_hits[2],0)
+            return max(list_of_found_hits[0][0]-list_of_found_hits[2],0), max(list_of_found_hits[0][1]-list_of_found_hits[2],0), max(list_of_found_hits[0][2]-list_of_found_hits[2],0)
     
     def draw(self):
         #environment
@@ -265,17 +266,23 @@ class Game:
             pygame.draw.line(self.screen, (200,200,200), self.pos, (self.fov_rightmost.rot_x_comp, self.fov_rightmost.rot_y_comp))
             for i in Map.hit_walls:
                 pygame.draw.line(self.screen, *i)
+            for i in self.end_points:
+                pygame.draw.line(self.screen, (255,255,255), self.pos, i)
+                
 
         pygame.display.flip()
-        
+    
+    #@profile    
     def run(self):
         self.initialize_constants()
+        #for i in range(3000):
+        #    self.angle += 1.0 / 500
         while self.running:
             self.event_handling()
             self.logic()
             self.draw()
-            clock.tick(60) #fps limit
-            pygame.display.set_caption("fps " + str(clock.get_fps()) + " fov " +str(FOV) + " rays " + str(RAYS))
+            clock.tick(1000) #fps limit
+            pygame.display.set_caption("fps " + str(clock.get_fps()) + " rays " + str(RAYS))
                     
         pygame.quit()
      
