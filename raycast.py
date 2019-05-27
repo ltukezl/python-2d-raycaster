@@ -183,7 +183,7 @@ class Game:
         self.ray_number = tuple(range(RAYS))
         
         self.res_y *= 0.6 #wall middle point
-        self.angle_list = [math.tan(x / LINE_OF_SIGHT_RADIUS) for x in range(-RAYS // 2, RAYS // 2)] #one ray angle to each pixel in plane at distance of LINE_OF_SIGHT_RADIUS. 
+        self.angle_list = [math.atan(x / LINE_OF_SIGHT_RADIUS) for x in range(-RAYS // 2, RAYS // 2)] #one ray angle to each pixel in plane at distance of LINE_OF_SIGHT_RADIUS. 
         self.pre_calc_cosines = tuple([math.cos(x) for x in self.angle_list])
         self.precalc_wall_constants =  tuple(map(lambda x: WALL_HEIGHT / x, self.pre_calc_cosines))
 
